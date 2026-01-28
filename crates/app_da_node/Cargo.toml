@@ -1,0 +1,27 @@
+[package]
+name = "app_da_node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Application-specific DA node for state management and proof serving"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+
+blob_schema = { workspace = true }
+celestia_adapter = { workspace = true }
+merkle = { workspace = true }
+state = { workspace = true }
+transition_format = { workspace = true }
+zk_host_harness = { workspace = true }

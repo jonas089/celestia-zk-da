@@ -1,0 +1,13 @@
+[package]
+name = "transition_format"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Format definitions for state transitions with witnesses"
+
+[dependencies]
+serde = { workspace = true }
+bincode = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+merkle = { workspace = true }

@@ -1,0 +1,73 @@
+services:
+  celestia-init:
+    # Built locally from jonas/aggregation branch
+    # Run: ~/Desktop/build-celestia-app-image.sh to rebuild
+    image: ghcr.io/celestiaorg/celestia-app-standalone@sha256:c423f04edf94800aa57aa7928501d4575b8fb56790bc9819826dd4207feb8725
+    container_name: celestia-init
+    entrypoint: /scripts/init.sh
+    volumes:
+      - ./testnet/celestia-app/init.sh:/scripts/init.sh:ro
+      - celestia-app:/home/celestia/.celestia-app
+    restart: "no"
+
+  celestia-validator:
+    # Built locally from jonas/aggregation branch
+    # Run: ~/Desktop/build-celestia-app-image.sh to rebuild
+    image: ghcr.io/celestiaorg/celestia-app-standalone@sha256:c423f04edf94800aa57aa7928501d4575b8fb56790bc9819826dd4207feb8725
+    container_name: celestia-validator
+    ports:
+      - "26656:26656"
+      - "26657:26657"
+      - "1317:1317"
+      - "9090:9090"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'bh=$(curl -sf http://localhost:26657/status | jq -r ''.result.sync_info.latest_block_height''); if [ "$$bh" -gt 1 ]; then exit 0; else exit 1; fi',
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+    volumes:
+      - celestia-app:/home/celestia/.celestia-app
+    command: >
+      start --force-no-bbr
+    depends_on:
+      celestia-init:
+        condition: service_completed_successfully
+    networks:
+      - celestia-zk-da-net
+
+  celestia-bridge:
+    image: ghcr.io/celestiaorg/celestia-node:v0.26.0-arabica
+    container_name: celestia-bridge
+    volumes:
+      - ./testnet/celestia-node/init.sh:/scripts/init.sh:ro
+      - celestia-bridge:/home/celestia
+    entrypoint: /scripts/init.sh
+    command: celestia bridge start --log.level.module share/discovery:fatal --keyring.keyname node --rpc.skip-auth
+    ports:
+      - "26658:26658"
+      - "2121:2121"
+    healthcheck:
+      test: >
+        curl -sf -X POST http://localhost:26658
+        -H "Content-Type: application/json"
+        -d '{"id":1,"jsonrpc":"2.0","method":"node.Ready","params":[]}' | grep true
+      interval: 10s
+      start_period: 10s
+    depends_on:
+      celestia-validator:
+        condition: service_healthy
+    networks:
+      - celestia-zk-da-net
+
+volumes:
+  celestia-app:
+  celestia-bridge:
+  hyperlane:
+
+networks:
+  celestia-zk-da-net:
+    driver: bridge

@@ -1,0 +1,20 @@
+[package]
+name = "verifier_lib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Standalone verifier for proof chains from Celestia"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+
+blob_schema = { workspace = true }
+celestia_adapter = { workspace = true }
+merkle = { workspace = true }
+zk_host_harness = { workspace = true }

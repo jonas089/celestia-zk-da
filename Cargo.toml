@@ -1,0 +1,73 @@
+[workspace]
+members = [
+    "crates/blob_schema",
+    "crates/celestia_adapter",
+    "crates/merkle",
+    "crates/state",
+    "crates/transition_format",
+    "crates/zk_guest_transition",
+    "crates/zk_host_harness",
+    "crates/app_da_node",
+    "crates/verifier_lib",
+    "crates/sdk",
+    "bin/appd",
+    "bin/verifier",
+    "examples/finance_app",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+hex = "0.4"
+base64 = "0.22"
+
+# Async
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+
+# HTTP
+axum = "0.8"
+reqwest = { version = "0.12", features = ["json"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Crypto
+sha2 = "0.10"
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+
+# DB
+sled = "0.34"
+
+# CLI
+clap = { version = "4.0", features = ["derive", "env"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Internal crates
+blob_schema = { path = "crates/blob_schema" }
+celestia_adapter = { path = "crates/celestia_adapter" }
+merkle = { path = "crates/merkle" }
+state = { path = "crates/state" }
+transition_format = { path = "crates/transition_format" }
+zk_host_harness = { path = "crates/zk_host_harness" }
+verifier_lib = { path = "crates/verifier_lib" }
+sdk = { path = "crates/sdk" }
+app_da_node = { path = "crates/app_da_node" }
+
+# SP1
+sp1-sdk = "5.0.8"
+sp1-zkvm = "5.0.8"
+sp1-build = "5.0.8"

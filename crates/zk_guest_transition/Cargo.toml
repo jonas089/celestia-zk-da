@@ -1,0 +1,15 @@
+[package]
+name = "zk_guest_transition"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SP1 guest program for state transitions"
+
+[dependencies]
+sp1-zkvm = { workspace = true }
+serde = { workspace = true }
+bincode = { workspace = true }
+
+# We need a minimal version of merkle for the guest
+# These are the core types without std features
+sha2 = { version = "0.10", default-features = false }

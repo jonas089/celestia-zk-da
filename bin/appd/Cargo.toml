@@ -1,0 +1,27 @@
+[package]
+name = "appd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Application DA node CLI"
+
+[[bin]]
+name = "appd"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+
+app_da_node = { workspace = true }
+celestia_adapter = { workspace = true }
+state = { workspace = true }
+sdk = { workspace = true }

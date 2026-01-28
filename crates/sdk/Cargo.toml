@@ -1,0 +1,20 @@
+[package]
+name = "sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SDK for building ZK applications with Celestia DA"
+
+[dependencies]
+serde = { workspace = true }
+bincode = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+
+blob_schema = { workspace = true }
+celestia_adapter = { workspace = true }
+merkle = { workspace = true }
+state = { workspace = true }
+transition_format = { workspace = true }

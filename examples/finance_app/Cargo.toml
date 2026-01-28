@@ -1,0 +1,28 @@
+[package]
+name = "finance_app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Example finance application with ZK-proven transfers"
+
+[[bin]]
+name = "finance"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+
+sdk = { workspace = true }
+app_da_node = { workspace = true }
+celestia_adapter = { workspace = true }
+state = { workspace = true }
+transition_format = { workspace = true }
+merkle = { workspace = true }

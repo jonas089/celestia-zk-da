@@ -1,0 +1,22 @@
+[package]
+name = "verifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Standalone verifier CLI for proof chains"
+
+[[bin]]
+name = "verifier"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+
+verifier_lib = { workspace = true }
+celestia_adapter = { workspace = true }

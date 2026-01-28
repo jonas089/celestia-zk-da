@@ -1,0 +1,20 @@
+[package]
+name = "zk_host_harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SP1 host harness for proof generation and verification"
+
+[dependencies]
+sp1-sdk = { workspace = true }
+serde = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+transition_format = { workspace = true }
+merkle = { workspace = true }
+
+[build-dependencies]
+sp1-build = { workspace = true }

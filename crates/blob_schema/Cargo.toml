@@ -1,0 +1,13 @@
+[package]
+name = "blob_schema"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Schema definitions for transition blobs posted to Celestia DA"
+
+[dependencies]
+serde = { workspace = true }
+bincode = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
