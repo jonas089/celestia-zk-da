@@ -160,6 +160,7 @@ GET /celestia/transitions?from_height=...&to_height=... → Fetch range of proof
 - Rust toolchain
 - SP1 toolchain (`cargo prove`)
 - Docker (for local Celestia)
+- Node.js 18+ (for the web frontend)
 
 ### Quick Start
 
@@ -241,6 +242,29 @@ curl "http://localhost:16000/value?key=account:alice"
 # Get transition history (shows Celestia heights)
 curl http://localhost:16000/history
 ```
+
+### Running the Web Frontend
+
+A React-based proof explorer is included for visualizing state, accounts, and ZK proofs:
+
+```bash
+# Install dependencies (first time only)
+cd frontend
+npm install
+
+# Start the development server
+npm run dev
+```
+
+The frontend runs at `http://localhost:5173` and connects to the API server at `http://127.0.0.1:16000`.
+
+**Features:**
+- **Dashboard**: Node status, transition count, state root, and history
+- **Accounts**: Create accounts, view balances, and inspect Merkle proofs
+- **Transfers**: Execute transfers with real-time proof generation feedback
+- **Proof Explorer**: Browse all transitions, view SP1 proofs, and Celestia DA details
+
+Make sure the API server is running before starting the frontend.
 
 ### Retrieving Proofs from Celestia
 

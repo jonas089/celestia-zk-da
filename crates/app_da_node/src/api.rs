@@ -364,9 +364,7 @@ async fn apply_transition(
     State(state): State<ApiState>,
     Json(request): Json<ApplyTransitionRequest>,
 ) -> Result<Json<ApplyTransitionResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let mut state = state.write().await;
-
-    // Convert operations
+    // Convert operations (no lock needed for parsing)
     let mut ops = Vec::new();
     for op in request.operations {
         let key = decode_key(&op.key, op.encoding.as_deref())?;
@@ -466,42 +464,72 @@ async fn apply_transition(
         });
     }
 
-    // Apply transition using the app node logic
-    let prev_root = state.store.root();
-    let sequence = state.store.transition_index() + 1;
+    // Phase 1: Apply state changes while holding the write lock
+    // Extract everything we need for proving, then release the lock
+    let (prev_root, new_root, sequence, input, proving_enabled, app_id, namespace, celestia_enabled, celestia_client) = {
+        let mut state_guard = state.write().await;
 
-    // Apply operations and collect witnesses
-    let witnesses = state.store.apply_batch(ops).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("failed to apply operations: {}", e),
-            }),
+        let prev_root = state_guard.store.root();
+        let sequence = state_guard.store.transition_index() + 1;
+
+        // Apply operations and collect witnesses
+        let witnesses = state_guard.store.apply_batch(ops).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("failed to apply operations: {}", e),
+                }),
+            )
+        })?;
+
+        // Commit the state changes
+        let new_root = state_guard.store.commit().map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("failed to commit state: {}", e),
+                }),
+            )
+        })?;
+
+        // Build transition input with operations for business logic verification
+        let input = transition_format::TransitionInput::new(
+            prev_root,
+            public_inputs.clone(),
+            private_inputs,
+            witnesses,
         )
-    })?;
+        .with_operations(verifiable_ops);
 
-    // Commit the state changes
-    let new_root = state.store.commit().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("failed to commit state: {}", e),
-            }),
-        )
-    })?;
+        // Extract config and client for use outside the lock
+        let proving_enabled = state_guard.config.proving_enabled;
+        let app_id = state_guard.config.app_id.clone();
+        let namespace = state_guard.config.namespace.clone();
+        let celestia_enabled = state_guard.config.celestia_enabled;
+        let celestia_client = state_guard.celestia.clone();
 
-    // Build transition input with operations for business logic verification
-    let input = transition_format::TransitionInput::new(
-        prev_root,
-        public_inputs.clone(),
-        private_inputs,
-        witnesses,
-    )
-    .with_operations(verifiable_ops);
+        (prev_root, new_root, sequence, input, proving_enabled, app_id, namespace, celestia_enabled, celestia_client)
+        // Lock is released here
+    };
 
-    // Generate proof (or just execute for testing)
-    let (proof_bytes, output) = if state.config.proving_enabled {
-        let result = state.prover.prove(&input).map_err(|e| {
+    // Phase 2: Generate proof WITHOUT holding the lock
+    // This allows other API requests to proceed during proving
+    let (proof_bytes, output) = if proving_enabled {
+        // SP1 proving is CPU-intensive, run it in a blocking thread pool
+        let result = tokio::task::spawn_blocking(move || {
+            let prover = zk_host_harness::TransitionProver::new();
+            prover.prove(&input)
+        })
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("proving task failed: {}", e),
+                }),
+            )
+        })?
+        .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
@@ -511,7 +539,21 @@ async fn apply_transition(
         })?;
         (result.proof_bytes, result.output)
     } else {
-        let output = state.prover.execute(&input).map_err(|e| {
+        // Execute without proof (also CPU-intensive)
+        let result = tokio::task::spawn_blocking(move || {
+            let prover = zk_host_harness::TransitionProver::new();
+            prover.execute(&input)
+        })
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("execution task failed: {}", e),
+                }),
+            )
+        })?
+        .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
@@ -519,7 +561,7 @@ async fn apply_transition(
                 }),
             )
         })?;
-        (Vec::new(), output)
+        (Vec::new(), result)
     };
 
     // Verify the output matches our computation
@@ -534,7 +576,7 @@ async fn apply_transition(
 
     // Create blob
     let blob = blob_schema::TransitionBlobV1::new(
-        state.config.app_id.clone(),
+        app_id,
         sequence,
         prev_root,
         new_root,
@@ -549,8 +591,8 @@ async fn apply_transition(
             .as_secs(),
     );
 
-    // Post to Celestia if enabled
-    let celestia_result = if state.config.celestia_enabled {
+    // Phase 3: Post to Celestia WITHOUT holding the lock
+    let celestia_result = if celestia_enabled {
         let blob_bytes = blob.encode().map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -559,9 +601,8 @@ async fn apply_transition(
                 }),
             )
         })?;
-        match state
-            .celestia
-            .submit_blob(&state.config.namespace, &blob_bytes)
+        match celestia_client
+            .submit_blob(&namespace, &blob_bytes)
             .await
         {
             Ok(result) => Some(result),
@@ -574,10 +615,13 @@ async fn apply_transition(
         None
     };
 
-    // Update root history
-    state
-        .root_history
-        .push((new_root, celestia_result.as_ref().map(|r| r.height)));
+    // Phase 4: Briefly re-acquire lock to update root history
+    {
+        let mut state_guard = state.write().await;
+        state_guard
+            .root_history
+            .push((new_root, celestia_result.as_ref().map(|r| r.height)));
+    }
 
     Ok(Json(ApplyTransitionResponse {
         sequence,
