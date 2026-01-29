@@ -346,12 +346,8 @@ impl SparseMerkleTree {
             let target_bit = target_path[depth];
 
             // Find all leaves that share the prefix but differ at this bit
-            let sibling_hash = self.compute_subtree_hash(
-                &leaf_entries,
-                target_prefix,
-                !target_bit,
-                depth,
-            );
+            let sibling_hash =
+                self.compute_subtree_hash(&leaf_entries, target_prefix, !target_bit, depth);
 
             siblings.push(sibling_hash);
         }
@@ -386,11 +382,7 @@ impl SparseMerkleTree {
     }
 
     /// Recursively compute subtree hash from filtered leaves.
-    fn compute_subtree_from_leaves(
-        &self,
-        leaves: &[&(Vec<bool>, Hash32)],
-        depth: usize,
-    ) -> Hash32 {
+    fn compute_subtree_from_leaves(&self, leaves: &[&(Vec<bool>, Hash32)], depth: usize) -> Hash32 {
         if depth == TREE_DEPTH {
             // At leaf level
             return leaves.first().map(|(_, h)| *h).unwrap_or(EMPTY_HASH);
@@ -401,9 +393,8 @@ impl SparseMerkleTree {
         }
 
         // Split into left and right subtrees
-        let (left_leaves, right_leaves): (Vec<_>, Vec<_>) = leaves
-            .iter()
-            .partition(|(path, _)| !path[depth]);
+        let (left_leaves, right_leaves): (Vec<_>, Vec<_>) =
+            leaves.iter().partition(|(path, _)| !path[depth]);
 
         let left_hash = if left_leaves.is_empty() {
             self.empty_hashes[depth + 1]

@@ -19,6 +19,7 @@ hex = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
+dotenv = "0.15"
 
 sdk = { workspace = true }
 app_da_node = { workspace = true }

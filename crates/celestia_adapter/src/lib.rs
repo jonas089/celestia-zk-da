@@ -117,22 +117,13 @@ struct JsonRpcError {
     message: String,
 }
 
-/// Blob submission parameters.
-#[derive(Serialize)]
-struct SubmitParams {
-    namespace: String,
-    data: String,
-    share_version: u8,
-    commitment: Option<String>,
-    index: Option<u32>,
-}
-
 /// Blob API response.
 #[derive(Deserialize)]
 struct BlobResponse {
     namespace: String,
     data: String,
-    share_version: u8,
+    #[serde(rename = "share_version")]
+    _share_version: u8,
     commitment: String,
     index: u32,
 }
@@ -223,9 +214,9 @@ impl CelestiaClient {
             "index": null
         }]);
 
-        // blob.Submit takes [blobs, gas_price, gas_adjustment] or [blobs, options]
-        // For simplicity, we use default gas settings
-        let params = serde_json::json!([blob, 0.002]);
+        // blob.Submit takes [blobs, TxConfig]
+        // Pass empty object for default gas settings
+        let params = serde_json::json!([blob, {}]);
 
         let height: u64 = self.call("blob.Submit", params).await?;
 
@@ -255,7 +246,7 @@ impl CelestiaClient {
 
         let responses: Vec<BlobResponse> = match self.call("blob.GetAll", params).await {
             Ok(r) => r,
-            Err(CelestiaError::JsonRpc { code, message })
+            Err(CelestiaError::JsonRpc { code: _, message })
                 if message.contains("blob: not found") =>
             {
                 return Ok(vec![]);

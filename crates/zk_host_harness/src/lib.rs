@@ -106,13 +106,12 @@ impl TransitionProver {
             .map_err(|e| ProverError::ProofGeneration(e.to_string()))?;
 
         // Extract output from proof
-        let output: TransitionOutput =
-            bincode::deserialize(proof.public_values.as_slice())
-                .map_err(|e| ProverError::OutputDecode(e.to_string()))?;
+        let output: TransitionOutput = bincode::deserialize(proof.public_values.as_slice())
+            .map_err(|e| ProverError::OutputDecode(e.to_string()))?;
 
         // Serialize proof
-        let proof_bytes = bincode::serialize(&proof)
-            .map_err(|e| ProverError::ProofGeneration(e.to_string()))?;
+        let proof_bytes =
+            bincode::serialize(&proof).map_err(|e| ProverError::ProofGeneration(e.to_string()))?;
 
         info!(
             "Proof generated: size={} bytes, prev_root={}, new_root={}",
@@ -164,9 +163,8 @@ impl TransitionVerifier {
             .verify(&proof, &self.vk)
             .map_err(|e| ProverError::Verification(e.to_string()))?;
 
-        let output: TransitionOutput =
-            bincode::deserialize(proof.public_values.as_slice())
-                .map_err(|e| ProverError::OutputDecode(e.to_string()))?;
+        let output: TransitionOutput = bincode::deserialize(proof.public_values.as_slice())
+            .map_err(|e| ProverError::OutputDecode(e.to_string()))?;
 
         Ok(output)
     }
@@ -181,9 +179,8 @@ impl TransitionVerifier {
             .verify(proof, &self.vk)
             .map_err(|e| ProverError::Verification(e.to_string()))?;
 
-        let output: TransitionOutput =
-            bincode::deserialize(proof.public_values.as_slice())
-                .map_err(|e| ProverError::OutputDecode(e.to_string()))?;
+        let output: TransitionOutput = bincode::deserialize(proof.public_values.as_slice())
+            .map_err(|e| ProverError::OutputDecode(e.to_string()))?;
 
         Ok(output)
     }

@@ -128,8 +128,14 @@ async fn verify_range(
         Ok(result) => {
             println!("\n=== Verification Complete ===");
             println!("Total transitions verified: {}", result.total_transitions);
-            println!("Sequence range: {} - {}", result.first_sequence, result.last_sequence);
-            println!("Height range: {} - {}", result.height_range.0, result.height_range.1);
+            println!(
+                "Sequence range: {} - {}",
+                result.first_sequence, result.last_sequence
+            );
+            println!(
+                "Height range: {} - {}",
+                result.height_range.0, result.height_range.1
+            );
             println!("First root: {}", hex::encode(result.first_root));
             println!("Latest root: {}", hex::encode(result.latest_root));
 

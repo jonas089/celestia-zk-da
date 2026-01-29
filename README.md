@@ -1,24 +1,20 @@
-# Celestia ZK-DA: Enterprise-Grade Verifiable State for Financial Institutions
+# Celestia ZK-DA
 
-**Build compliant, privacy-preserving financial applications with cryptographic guarantees—powered by Celestia's unmatched data availability layer.**
-
----
+Build compliant, privacy-preserving financial applications with cryptographic guarantees. Powered by Celestia data availability and SP1 zero-knowledge proofs.
 
 ## The Problem
 
-Financial institutions face an impossible trilemma:
+Financial institutions need:
 
-1. **Regulatory Compliance** — Every transaction must be auditable and provably correct
-2. **Privacy** — Client data and proprietary business logic must remain confidential
-3. **Decentralization** — No single point of failure or trust dependency
+1. **Regulatory Compliance**: Every transaction must be auditable and provably correct
+2. **Privacy**: Client data and proprietary business logic must remain confidential
+3. **Decentralization**: No single point of failure or trust dependency
 
-Traditional solutions force you to choose two at best. Until now.
-
----
+Traditional solutions force you to pick two.
 
 ## The Solution
 
-This framework leverages **Celestia's data availability layer** combined with **zero-knowledge proofs** to deliver all three—simultaneously.
+This framework combines Celestia's data availability layer with zero-knowledge proofs to deliver all three.
 
 ### How It Works
 
@@ -29,36 +25,29 @@ This framework leverages **Celestia's data availability layer** combined with **
 │   (Rust Code)   │     │                  │     │                 │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
         │                       │                        │
-        │                       │                        │
         ▼                       ▼                        ▼
    Private Data          Proof of Correct          Public Verification
    Stays Private         State Transition          Anyone Can Audit
 ```
 
-1. **Write business logic in Rust** — No cryptography expertise required
-2. **Proofs generated automatically** — SP1 compiles your logic to ZK circuits
-3. **Post to Celestia** — Proofs + state roots published to your app-specific namespace
-4. **Anyone can verify** — Cryptographic guarantee that every state transition is valid
-
----
+1. **Write business logic in Rust**: No cryptography expertise required
+2. **Proofs generated automatically**: SP1 compiles your logic to ZK circuits
+3. **Post to Celestia**: Proofs and state roots published to your app-specific namespace
+4. **Anyone can verify**: Cryptographic guarantee that every state transition is valid
 
 ## Why Celestia?
 
-Celestia is the **only** data availability layer purpose-built for this architecture:
-
 ### App-Specific Namespaces
-Each financial application gets its own namespace on Celestia. Your data, your space—completely isolated from other applications while sharing the security of the entire network.
+Each financial application gets its own namespace. Your data is isolated from other applications while sharing the security of the entire network.
 
 ### Sovereign Verification
-Unlike smart contract platforms, your application's rules aren't enforced by the DA layer—they're **proven** cryptographically and merely **published** to Celestia. You maintain complete sovereignty over your business logic while gaining global verifiability.
+Your application's rules aren't enforced by the DA layer. They're proven cryptographically and published to Celestia. You maintain complete sovereignty over your business logic while gaining global verifiability.
 
-### Cost Efficiency at Scale
-Pay only for the data you actually publish. Celestia's blob-based pricing is orders of magnitude cheaper than smart contract execution for proof publication.
+### Cost Efficiency
+Pay only for the data you publish. Celestia's blob-based pricing is cheaper than smart contract execution for proof publication.
 
 ### Light Client Verification
-Banks, regulators, and auditors can run lightweight verification nodes that cryptographically verify your entire transaction history without processing raw data. Perfect for compliance workflows.
-
----
+Banks, regulators, and auditors can run lightweight verification nodes that cryptographically verify your entire transaction history without processing raw data.
 
 ## Privacy Architecture
 
@@ -75,19 +64,17 @@ Banks, regulators, and auditors can run lightweight verification nodes that cryp
 - Business logic implementation
 - Compliance rule specifics
 
-**Regulators can verify correctness without seeing the data.** They receive cryptographic proof that:
+Regulators can verify correctness without seeing the data. They receive cryptographic proof that:
 - All transfers respect balance constraints
 - All compliance rules were followed
 - State transitions are mathematically valid
-
----
 
 ## For Financial Institutions
 
 ### Write Business Logic, Not Cryptography
 
 ```rust
-// Your compliance rules—automatically proven in ZK
+// Your compliance rules, automatically proven in ZK
 fn process_transfer(ctx: &mut Context, transfer: Transfer) -> Result<()> {
     let sender = ctx.get_account(&transfer.from)?;
     let receiver = ctx.get_account(&transfer.to)?;
@@ -115,22 +102,20 @@ The SDK handles:
 - Celestia blob publication
 - Proof verification
 
-**Your team focuses on compliance logic. We handle the cryptography.**
+Your team focuses on compliance logic. We handle the cryptography.
 
 ### Audit-Ready by Design
 
 Every state transition produces:
-1. **Cryptographic proof** — Mathematical guarantee of correctness
-2. **Celestia commitment** — Timestamped, immutable publication
-3. **Merkle proof** — For any individual account query
+1. **Cryptographic proof**: Mathematical guarantee of correctness
+2. **Celestia commitment**: Timestamped, immutable publication
+3. **Merkle proof**: For any individual account query
 
 Auditors and regulators can independently verify:
 - All transactions followed your published rules
 - No unauthorized state changes occurred
 - Complete transaction ordering is preserved
 - Historical states are recoverable
-
----
 
 ## Technical Architecture
 
@@ -159,14 +144,15 @@ Auditors and regulators can independently verify:
 ### API Endpoints
 
 ```
-GET /root/latest          → Current state root + Celestia reference
-GET /value?key=...        → Value + Merkle proof
-GET /proof/merkle?key=... → Merkle inclusion proof only
-GET /sync/status          → Sync status with Celestia
-GET /health               → Node health check
+GET /health                                      → Node health check
+GET /root/latest                                 → Current state root + Celestia reference
+GET /value?key=...                               → Value + Merkle proof
+GET /proof/merkle?key=...                        → Merkle inclusion proof only
+GET /sync/status                                 → Sync status with Celestia
+GET /history                                     → Root history with Celestia heights
+GET /celestia/transition?height=...              → Fetch transition proof from Celestia
+GET /celestia/transitions?from_height=...&to_height=... → Fetch range of proofs
 ```
-
----
 
 ## Getting Started
 
@@ -181,12 +167,59 @@ GET /health               → Node health check
 # Start local Celestia network
 make start
 
-# Run the finance demo
-cargo run --release --bin finance -- demo
+# Run the finance demo (generates proofs and posts to Celestia)
+cargo run --release --bin finance demo
 
 # Verify the proof chain
-cargo run --release --bin verifier -- verify --from 1 --to 100
+cargo run --release --bin verifier verify --from 1 --to 100
 ```
+
+### Running the API Server
+
+Start the HTTP API server to query state and retrieve proofs:
+
+```bash
+# Start API server for the finance app (uses same data directory)
+cargo run --release --bin appd -- \
+  --data-dir ./finance-data \
+  --namespace finance \
+  serve --bind 127.0.0.1:3000
+```
+
+### Querying State
+
+```bash
+# Health check
+curl http://localhost:3000/health
+
+# Get current state root
+curl http://localhost:3000/root/latest
+
+# Get account balance with Merkle proof
+curl "http://localhost:3000/value?key=account:alice"
+
+# Get transition history (shows Celestia heights)
+curl http://localhost:3000/history
+```
+
+### Retrieving Proofs from Celestia
+
+Fetch ZK proofs that were posted to Celestia:
+
+```bash
+# Get a single transition by Celestia block height
+curl "http://localhost:3000/celestia/transition?height=12345"
+
+# Get multiple transitions in a height range
+curl "http://localhost:3000/celestia/transitions?from_height=100&to_height=200"
+```
+
+Response includes:
+- `sequence`: Transition number
+- `prev_root`, `new_root`: State roots before and after
+- `proof`: The ZK proof (base64 encoded)
+- `program_hash`: SP1 circuit hash for verification
+- `celestia_height`: Block height where proof is stored
 
 ### Build Your Own Application
 
@@ -213,26 +246,21 @@ impl Application for MyComplianceApp {
 }
 ```
 
----
-
 ## Why This Matters
 
 ### For Banks
-- **Reduce compliance costs** — Automated cryptographic audit trails
-- **Protect client privacy** — Prove correctness without exposing data
-- **Maintain control** — Your rules, your infrastructure, your sovereignty
+- **Reduce compliance costs**: Automated cryptographic audit trails
+- **Protect client privacy**: Prove correctness without exposing data
+- **Maintain control**: Your rules, your infrastructure, your sovereignty
 
 ### For Regulators
-- **Real-time verification** — Cryptographic guarantees, not trust
-- **Reduced audit burden** — Proofs speak for themselves
-- **No data exposure needed** — Verify without accessing sensitive information
+- **Real-time verification**: Cryptographic guarantees, not trust
+- **Reduced audit burden**: Proofs speak for themselves
+- **No data exposure needed**: Verify without accessing sensitive information
 
 ### For the Industry
-- **New cooperation models** — Multiple institutions can verify each other's state without sharing data
-- **Interoperability foundation** — Standardized proof format for cross-institution verification
-- **Future-proof architecture** — Built on the most scalable DA layer available
-
----
+- **New cooperation models**: Multiple institutions can verify each other's state without sharing data
+- **Interoperability foundation**: Standardized proof format for cross-institution verification
 
 ## Production Considerations
 
@@ -251,36 +279,28 @@ impl Application for MyComplianceApp {
 - Audit trail preserved on Celestia indefinitely
 - Supports selective disclosure patterns
 
----
-
 ## Architecture Decisions
 
-### Why SP1 (Not Other ZK Systems)?
+### Why SP1?
 - Write circuits in Rust, not custom DSLs
 - Compilation from standard business logic
 - No trusted setup required (STARKs)
 - Active development and support
 
-### Why Celestia (Not Other DA Layers)?
+### Why Celestia?
 - Purpose-built for rollup/app data availability
-- App-specific namespaces (data isolation)
-- Cheapest DA costs in the ecosystem
-- Strongest light client verification story
+- App-specific namespaces for data isolation
+- Low DA costs
+- Strong light client verification
 
-### Why This Architecture (Not Smart Contracts)?
+### Why This Architecture?
 - Complete privacy for business logic
 - No gas costs for execution complexity
 - Full sovereignty over state machine rules
 - Regulatory-friendly design
 
----
-
 ## Contact
 
 Ready to build compliant, verifiable financial infrastructure?
 
-**This is the future of financial technology: provably correct, privately executed, publicly verifiable.**
-
----
-
-*Built with Celestia, SP1, and Rust. Designed for regulated institutions that demand both privacy and transparency.*
+Built with Celestia, SP1, and Rust for regulated institutions that need both privacy and transparency.

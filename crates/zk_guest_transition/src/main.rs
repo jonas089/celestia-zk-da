@@ -35,10 +35,20 @@ struct UpdateWitness {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 enum OperationType {
     Set,
-    CreateAccount { initial_balance: u64 },
-    Transfer { from: Vec<u8>, to: Vec<u8>, amount: u64 },
-    Mint { amount: u64 },
-    Burn { amount: u64 },
+    CreateAccount {
+        initial_balance: u64,
+    },
+    Transfer {
+        from: Vec<u8>,
+        to: Vec<u8>,
+        amount: u64,
+    },
+    Mint {
+        amount: u64,
+    },
+    Burn {
+        amount: u64,
+    },
 }
 
 /// A verifiable operation.
@@ -144,42 +154,6 @@ fn hash_public_inputs(prev_root: &Hash32, public_inputs: &[u8]) -> Hash32 {
     hash
 }
 
-/// Verify a transfer operation.
-/// Returns true if the transfer is valid according to business rules.
-fn verify_transfer(
-    from_old: &Account,
-    from_new: &Account,
-    to_old: &Account,
-    to_new: &Account,
-    amount: u64,
-) -> bool {
-    // Check sender has sufficient balance
-    if from_old.balance < amount {
-        return false;
-    }
-
-    // Check balances are updated correctly
-    if from_new.balance != from_old.balance - amount {
-        return false;
-    }
-
-    if to_new.balance != to_old.balance + amount {
-        return false;
-    }
-
-    // Check sender nonce is incremented
-    if from_new.nonce != from_old.nonce + 1 {
-        return false;
-    }
-
-    // Check receiver nonce is unchanged
-    if to_new.nonce != to_old.nonce {
-        return false;
-    }
-
-    true
-}
-
 /// Verify business logic for an operation.
 fn verify_operation(op: &VerifiableOperation, witnesses: &[UpdateWitness]) -> bool {
     match &op.op_type {
@@ -196,7 +170,11 @@ fn verify_operation(op: &VerifiableOperation, witnesses: &[UpdateWitness]) -> bo
             }
             false
         }
-        OperationType::Transfer { from, to, amount } => {
+        OperationType::Transfer {
+            from: _,
+            to: _,
+            amount,
+        } => {
             // For transfers, we need to find the witnesses for both from and to accounts
             // and verify the transfer logic
 
@@ -211,9 +189,13 @@ fn verify_operation(op: &VerifiableOperation, witnesses: &[UpdateWitness]) -> bo
             // In a full implementation, we'd match witnesses by key hash
             if let Some(fw) = from_witness {
                 if let (Some(old_data), Some(new_data)) = (&fw.old_value, &fw.new_value) {
-                    if let (Some(old_acc), Some(new_acc)) = (Account::decode(old_data), Account::decode(new_data)) {
+                    if let (Some(old_acc), Some(new_acc)) =
+                        (Account::decode(old_data), Account::decode(new_data))
+                    {
                         // Verify sender balance decreased by amount
-                        if old_acc.balance >= *amount && new_acc.balance == old_acc.balance - *amount {
+                        if old_acc.balance >= *amount
+                            && new_acc.balance == old_acc.balance - *amount
+                        {
                             return true;
                         }
                     }
@@ -226,7 +208,9 @@ fn verify_operation(op: &VerifiableOperation, witnesses: &[UpdateWitness]) -> bo
         OperationType::Mint { amount } => {
             // Verify balance increased by mint amount
             if let (Some(old_val), Some(new_val)) = (&op.old_value, &op.new_value) {
-                if let (Some(old_acc), Some(new_acc)) = (Account::decode(old_val), Account::decode(new_val)) {
+                if let (Some(old_acc), Some(new_acc)) =
+                    (Account::decode(old_val), Account::decode(new_val))
+                {
                     return new_acc.balance == old_acc.balance + *amount;
                 }
             }
@@ -235,8 +219,11 @@ fn verify_operation(op: &VerifiableOperation, witnesses: &[UpdateWitness]) -> bo
         OperationType::Burn { amount } => {
             // Verify balance decreased by burn amount
             if let (Some(old_val), Some(new_val)) = (&op.old_value, &op.new_value) {
-                if let (Some(old_acc), Some(new_acc)) = (Account::decode(old_val), Account::decode(new_val)) {
-                    return old_acc.balance >= *amount && new_acc.balance == old_acc.balance - *amount;
+                if let (Some(old_acc), Some(new_acc)) =
+                    (Account::decode(old_val), Account::decode(new_val))
+                {
+                    return old_acc.balance >= *amount
+                        && new_acc.balance == old_acc.balance - *amount;
                 }
             }
             false
@@ -267,10 +254,7 @@ pub fn main() {
         );
 
         // This is the core verification: the witness must produce our current root
-        assert_eq!(
-            computed_old_root, current_root,
-            "witness old root mismatch"
-        );
+        assert_eq!(computed_old_root, current_root, "witness old root mismatch");
 
         // Compute the new root
         current_root = compute_root(

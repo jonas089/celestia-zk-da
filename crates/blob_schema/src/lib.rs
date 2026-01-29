@@ -116,7 +116,9 @@ impl TransitionBlobV1 {
 
     /// Compute the hash of this blob (for indexing/signing).
     pub fn hash(&self) -> Hash32 {
-        let encoded = self.encode().expect("encoding should not fail for valid blob");
+        let encoded = self
+            .encode()
+            .expect("encoding should not fail for valid blob");
         let mut hasher = Sha256::new();
         hasher.update(&encoded);
         hasher.finalize().into()
@@ -200,15 +202,8 @@ mod tests {
 
     #[test]
     fn test_invalid_version() {
-        let mut blob = TransitionBlobV1::new(
-            vec![],
-            0,
-            [0u8; 32],
-            [0u8; 32],
-            vec![],
-            vec![],
-            [0u8; 32],
-        );
+        let mut blob =
+            TransitionBlobV1::new(vec![], 0, [0u8; 32], [0u8; 32], vec![], vec![], [0u8; 32]);
         blob.version = 99;
 
         let encoded = bincode::serialize(&blob).unwrap();

@@ -64,6 +64,7 @@ pub struct Context {
     /// Witnesses collected for touched keys.
     witnesses: Vec<UpdateWitness>,
     /// Cache of read values.
+    #[allow(dead_code)]
     read_cache: HashMap<Vec<u8>, Option<Vec<u8>>>,
 }
 
@@ -119,9 +120,7 @@ impl Context {
     /// Delete a key.
     pub fn delete(&mut self, key: &[u8]) -> Result<()> {
         let witness = self.store.delete(key)?;
-        self.operations.push(StateOp::Delete {
-            key: key.to_vec(),
-        });
+        self.operations.push(StateOp::Delete { key: key.to_vec() });
         self.witnesses.push(witness);
         Ok(())
     }
@@ -246,12 +245,7 @@ pub mod accounts {
     }
 
     /// Transfer between accounts.
-    pub fn transfer(
-        ctx: &mut Context,
-        from: &str,
-        to: &str,
-        amount: u64,
-    ) -> Result<()> {
+    pub fn transfer(ctx: &mut Context, from: &str, to: &str, amount: u64) -> Result<()> {
         let from_balance = get_balance(ctx, from)?;
         if from_balance < amount {
             return Err(SdkError::Application(format!(

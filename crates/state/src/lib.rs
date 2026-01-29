@@ -140,9 +140,13 @@ impl StateStore {
     }
 
     /// Insert a typed value.
-    pub fn insert<V: Serialize>(&mut self, key: &[u8], value: &V) -> Result<UpdateWitness, StateError> {
-        let data = bincode::serialize(value)
-            .map_err(|e| StateError::Serialization(e.to_string()))?;
+    pub fn insert<V: Serialize>(
+        &mut self,
+        key: &[u8],
+        value: &V,
+    ) -> Result<UpdateWitness, StateError> {
+        let data =
+            bincode::serialize(value).map_err(|e| StateError::Serialization(e.to_string()))?;
         self.insert_raw(key, data)
     }
 
@@ -177,8 +181,10 @@ impl StateStore {
         self.db.insert(b"__merkle_tree__", tree_data)?;
 
         // Persist transition index
-        self.db
-            .insert(b"__transition_index__", &self.transition_index.to_le_bytes())?;
+        self.db.insert(
+            b"__transition_index__",
+            &self.transition_index.to_le_bytes(),
+        )?;
 
         self.db.flush()?;
 
@@ -192,9 +198,9 @@ impl StateStore {
 
     /// Iterate over all keys with a given prefix.
     pub fn scan_prefix(&self, prefix: &[u8]) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
-        self.db.scan_prefix(prefix).filter_map(|r| {
-            r.ok().map(|(k, v)| (k.to_vec(), v.to_vec()))
-        })
+        self.db
+            .scan_prefix(prefix)
+            .filter_map(|r| r.ok().map(|(k, v)| (k.to_vec(), v.to_vec())))
     }
 }
 
@@ -311,7 +317,10 @@ mod tests {
             nonce: u64,
         }
 
-        let account = Account { balance: 100, nonce: 0 };
+        let account = Account {
+            balance: 100,
+            nonce: 0,
+        };
         store.insert(b"account:alice", &account).unwrap();
 
         let loaded: Account = store.get(b"account:alice").unwrap().unwrap();

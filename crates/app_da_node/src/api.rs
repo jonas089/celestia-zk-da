@@ -1,14 +1,14 @@
 //! HTTP API for the app node.
 
-use crate::node::{AppNode, AppNodeState};
+use crate::node::AppNodeState;
 use axum::{
     extract::{Query, State},
     http::StatusCode,
-    response::IntoResponse,
     routing::get,
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use blob_schema::TransitionBlobV1;
 use merkle::MerkleProof;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -33,6 +33,8 @@ pub fn create_router(state: Arc<RwLock<AppNodeState>>) -> Router {
         .route("/proof/merkle", get(get_merkle_proof))
         .route("/sync/status", get(get_sync_status))
         .route("/history", get(get_history))
+        .route("/celestia/transition", get(get_celestia_transition))
+        .route("/celestia/transitions", get(get_celestia_transitions))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -103,6 +105,38 @@ struct ErrorResponse {
     error: String,
 }
 
+#[derive(Serialize)]
+struct TransitionResponse {
+    sequence: u64,
+    prev_root: String,
+    new_root: String,
+    public_inputs: String,
+    proof: String,
+    proof_size_bytes: usize,
+    program_hash: String,
+    celestia_height: u64,
+}
+
+impl TransitionResponse {
+    fn from_blob(blob: &TransitionBlobV1, height: u64) -> Self {
+        Self {
+            sequence: blob.sequence,
+            prev_root: hex::encode(blob.prev_root),
+            new_root: hex::encode(blob.new_root),
+            public_inputs: BASE64.encode(&blob.public_inputs),
+            proof: BASE64.encode(&blob.proof),
+            proof_size_bytes: blob.proof.len(),
+            program_hash: hex::encode(blob.program_hash),
+            celestia_height: height,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct TransitionsResponse {
+    transitions: Vec<TransitionResponse>,
+}
+
 // Query parameters
 
 #[derive(Deserialize)]
@@ -119,6 +153,17 @@ struct ProofQuery {
     encoding: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct CelestiaTransitionQuery {
+    height: u64,
+}
+
+#[derive(Deserialize)]
+struct CelestiaTransitionsQuery {
+    from_height: u64,
+    to_height: u64,
+}
+
 // Handlers
 
 async fn health() -> Json<HealthResponse> {
@@ -132,10 +177,7 @@ async fn get_latest_root(State(state): State<ApiState>) -> Json<RootResponse> {
     let state = state.read().await;
     let root = state.store.root();
     let transition_index = state.store.transition_index();
-    let celestia_height = state
-        .root_history
-        .last()
-        .and_then(|(_, h)| *h);
+    let celestia_height = state.root_history.last().and_then(|(_, h)| *h);
 
     Json(RootResponse {
         root: hex::encode(root),
@@ -151,17 +193,14 @@ async fn get_value(
     let key = decode_key(&query.key, query.encoding.as_deref())?;
 
     let state = state.read().await;
-    let (value, proof) = state
-        .store
-        .get_with_proof(&key)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: e.to_string(),
-                }),
-            )
-        })?;
+    let (value, proof) = state.store.get_with_proof(&key).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
 
     let root = state.store.root();
 
@@ -211,6 +250,75 @@ async fn get_history(State(state): State<ApiState>) -> Json<HistoryResponse> {
         .collect();
 
     Json(HistoryResponse { entries })
+}
+
+async fn get_celestia_transition(
+    State(state): State<ApiState>,
+    Query(query): Query<CelestiaTransitionQuery>,
+) -> Result<Json<TransitionResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let state = state.read().await;
+
+    let blobs = state
+        .celestia
+        .get_blobs(&state.config.namespace, query.height)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(ErrorResponse {
+                    error: format!("Celestia error: {}", e),
+                }),
+            )
+        })?;
+
+    let blob = blobs.first().ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("No transition found at height {}", query.height),
+            }),
+        )
+    })?;
+
+    let transition = TransitionBlobV1::decode(&blob.data).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to decode transition: {}", e),
+            }),
+        )
+    })?;
+
+    Ok(Json(TransitionResponse::from_blob(&transition, query.height)))
+}
+
+async fn get_celestia_transitions(
+    State(state): State<ApiState>,
+    Query(query): Query<CelestiaTransitionsQuery>,
+) -> Result<Json<TransitionsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let state = state.read().await;
+
+    let blobs = state
+        .celestia
+        .get_blobs_range(&state.config.namespace, query.from_height, query.to_height)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(ErrorResponse {
+                    error: format!("Celestia error: {}", e),
+                }),
+            )
+        })?;
+
+    let mut transitions = Vec::new();
+    for (height, blob) in blobs {
+        if let Ok(transition) = TransitionBlobV1::decode(&blob.data) {
+            transitions.push(TransitionResponse::from_blob(&transition, height));
+        }
+    }
+
+    Ok(Json(TransitionsResponse { transitions }))
 }
 
 // Helper functions

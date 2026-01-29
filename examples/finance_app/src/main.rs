@@ -10,7 +10,6 @@ use anyhow::Result;
 use app_da_node::{AppNode, AppNodeConfig};
 use celestia_adapter::Namespace;
 use clap::{Parser, Subcommand};
-use merkle::Hash32;
 use serde::{Deserialize, Serialize};
 use state::StateOp;
 use std::path::PathBuf;
@@ -113,6 +112,9 @@ async fn get_account(node: &AppNode, name: &str) -> Result<Option<Account>> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env file
+    dotenv::dotenv().ok();
+
     let cli = Cli::parse();
 
     // Setup logging
@@ -194,7 +196,9 @@ async fn create_account(config: AppNodeConfig, name: &str, balance: u64) -> Resu
 
     info!("Creating account '{}' with balance {}", name, balance);
 
-    let result = node.apply_transition(ops, public_inputs, vec![]).await?;
+    let result = node
+        .apply_transition(ops, public_inputs, vec![], verifiable_ops)
+        .await?;
 
     println!("Account created:");
     println!("  Name: {}", name);
@@ -250,18 +254,36 @@ async fn transfer(config: AppNodeConfig, from: &str, to: &str, amount: u64) -> R
         },
     ];
 
+    // Create verifiable operation for the transfer
+    let verifiable_ops = vec![VerifiableOperation {
+        op_type: OperationType::Transfer {
+            from: from_key.clone(),
+            to: to_key.clone(),
+            amount,
+        },
+        key: from_key.clone(),
+        old_value: Some(from_account.encode()),
+        new_value: Some(from_new.encode()),
+        witness_index: 0,
+    }];
+
     let public_inputs = format!("transfer:{}:{}:{}", from, to, amount).into_bytes();
 
-    info!(
-        "Transferring {} from '{}' to '{}'",
-        amount, from, to
-    );
+    info!("Transferring {} from '{}' to '{}'", amount, from, to);
 
-    let result = node.apply_transition(ops, public_inputs, vec![]).await?;
+    let result = node
+        .apply_transition(ops, public_inputs, vec![], verifiable_ops)
+        .await?;
 
     println!("Transfer complete:");
-    println!("  From: {} ({} -> {})", from, from_account.balance, from_new.balance);
-    println!("  To: {} ({} -> {})", to, to_account.balance, to_new.balance);
+    println!(
+        "  From: {} ({} -> {})",
+        from, from_account.balance, from_new.balance
+    );
+    println!(
+        "  To: {} ({} -> {})",
+        to, to_account.balance, to_new.balance
+    );
     println!("  Amount: {}", amount);
     println!("  Sequence: {}", result.sequence);
     println!("  Root: {}", hex::encode(result.new_root));
@@ -348,11 +370,7 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
     // Create accounts
     println!("--- Creating Accounts ---");
 
-    let accounts = [
-        ("alice", 1000u64),
-        ("bob", 500),
-        ("charlie", 250),
-    ];
+    let accounts = [("alice", 1000u64), ("bob", 500), ("charlie", 250)];
 
     for (name, balance) in &accounts {
         let account = Account {
@@ -366,9 +384,21 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
             value: account.encode(),
         }];
 
+        let verifiable_ops = vec![VerifiableOperation {
+            op_type: OperationType::CreateAccount {
+                initial_balance: *balance,
+            },
+            key: key.clone(),
+            old_value: None,
+            new_value: Some(account.encode()),
+            witness_index: 0,
+        }];
+
         let public_inputs = format!("create:{}:{}", name, balance).into_bytes();
 
-        let result = node.apply_transition(ops, public_inputs, vec![]).await?;
+        let result = node
+            .apply_transition(ops, public_inputs, vec![], verifiable_ops)
+            .await?;
         println!(
             "Created {}: balance={}, root={}",
             name,
@@ -392,6 +422,9 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
         let from_acc = get_account(&node, from).await?.unwrap();
         let to_acc = get_account(&node, to).await?.unwrap_or_default();
 
+        let from_key = account_key(from);
+        let to_key = account_key(to);
+
         let from_new = Account {
             balance: from_acc.balance - amount,
             nonce: from_acc.nonce + 1,
@@ -403,18 +436,32 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
 
         let ops = vec![
             StateOp::Insert {
-                key: account_key(from),
+                key: from_key.clone(),
                 value: from_new.encode(),
             },
             StateOp::Insert {
-                key: account_key(to),
+                key: to_key.clone(),
                 value: to_new.encode(),
             },
         ];
 
+        let verifiable_ops = vec![VerifiableOperation {
+            op_type: OperationType::Transfer {
+                from: from_key.clone(),
+                to: to_key.clone(),
+                amount: *amount,
+            },
+            key: from_key,
+            old_value: Some(from_acc.encode()),
+            new_value: Some(from_new.encode()),
+            witness_index: 0,
+        }];
+
         let public_inputs = format!("transfer:{}:{}:{}", from, to, amount).into_bytes();
 
-        let result = node.apply_transition(ops, public_inputs, vec![]).await?;
+        let result = node
+            .apply_transition(ops, public_inputs, vec![], verifiable_ops)
+            .await?;
         println!(
             "Transfer {} -> {} ({}): root={}",
             from,

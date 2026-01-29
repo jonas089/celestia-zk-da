@@ -208,9 +208,7 @@ async fn apply_transition(
 
     info!("Applying {} operations...", ops.len());
 
-    let result = node
-        .apply_transition(ops, public_inputs, vec![])
-        .await?;
+    let result = node.apply_transition(ops, public_inputs, vec![], vec![]).await?;
 
     println!("Transition applied:");
     println!("  Sequence: {}", result.sequence);
@@ -272,9 +270,7 @@ async fn set_value(config: AppNodeConfig, key: &str, value: &str) -> Result<()> 
         value: value.as_bytes().to_vec(),
     }];
 
-    let result = node
-        .apply_transition(ops, vec![], vec![])
-        .await?;
+    let result = node.apply_transition(ops, vec![], vec![], vec![]).await?;
 
     println!("Value set:");
     println!("  Key: {}", key);
@@ -298,7 +294,7 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
     ];
 
     let result = node
-        .apply_transition(ops, b"create_accounts".to_vec(), vec![])
+        .apply_transition(ops, b"create_accounts".to_vec(), vec![], vec![])
         .await?;
 
     println!("Created accounts at sequence {}", result.sequence);
@@ -325,7 +321,7 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
     ];
 
     let result = node
-        .apply_transition(ops, b"transfer:alice:bob:100".to_vec(), vec![])
+        .apply_transition(ops, b"transfer:alice:bob:100".to_vec(), vec![], vec![])
         .await?;
 
     println!("Transfer complete at sequence {}", result.sequence);
@@ -351,7 +347,7 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
     ];
 
     let result = node
-        .apply_transition(ops, b"transfer:bob:charlie:50".to_vec(), vec![])
+        .apply_transition(ops, b"transfer:bob:charlie:50".to_vec(), vec![], vec![])
         .await?;
 
     println!("Transfer complete at sequence {}", result.sequence);

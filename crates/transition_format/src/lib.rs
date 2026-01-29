@@ -310,12 +310,8 @@ mod tests {
 
     #[test]
     fn test_transition_input_roundtrip() {
-        let input = TransitionInput::new(
-            [1u8; 32],
-            b"public".to_vec(),
-            b"private".to_vec(),
-            vec![],
-        );
+        let input =
+            TransitionInput::new([1u8; 32], b"public".to_vec(), b"private".to_vec(), vec![]);
 
         let encoded = input.encode();
         let decoded = TransitionInput::decode(&encoded).unwrap();
@@ -327,12 +323,7 @@ mod tests {
 
     #[test]
     fn test_transition_output_roundtrip() {
-        let output = TransitionOutput::new(
-            [1u8; 32],
-            [2u8; 32],
-            [3u8; 32],
-            b"outputs".to_vec(),
-        );
+        let output = TransitionOutput::new([1u8; 32], [2u8; 32], [3u8; 32], b"outputs".to_vec());
 
         let encoded = output.encode();
         let decoded = TransitionOutput::decode(&encoded).unwrap();
@@ -369,18 +360,44 @@ mod tests {
     fn test_finance_transfer_verification() {
         use finance::*;
 
-        let from_old = Account { balance: 100, nonce: 0 };
-        let from_new = Account { balance: 70, nonce: 1 };
-        let to_old = Account { balance: 50, nonce: 5 };
-        let to_new = Account { balance: 80, nonce: 5 };
+        let from_old = Account {
+            balance: 100,
+            nonce: 0,
+        };
+        let from_new = Account {
+            balance: 70,
+            nonce: 1,
+        };
+        let to_old = Account {
+            balance: 50,
+            nonce: 5,
+        };
+        let to_new = Account {
+            balance: 80,
+            nonce: 5,
+        };
 
-        assert!(verify_transfer(&from_old, &from_new, &to_old, &to_new, 30, 0));
+        assert!(verify_transfer(
+            &from_old, &from_new, &to_old, &to_new, 30, 0
+        ));
 
         // Invalid: insufficient balance
-        let from_old_poor = Account { balance: 10, nonce: 0 };
-        assert!(!verify_transfer(&from_old_poor, &from_new, &to_old, &to_new, 30, 0));
+        let from_old_poor = Account {
+            balance: 10,
+            nonce: 0,
+        };
+        assert!(!verify_transfer(
+            &from_old_poor,
+            &from_new,
+            &to_old,
+            &to_new,
+            30,
+            0
+        ));
 
         // Invalid: wrong nonce
-        assert!(!verify_transfer(&from_old, &from_new, &to_old, &to_new, 30, 1));
+        assert!(!verify_transfer(
+            &from_old, &from_new, &to_old, &to_new, 30, 1
+        ));
     }
 }

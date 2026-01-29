@@ -2,14 +2,14 @@
 
 use anyhow::Result;
 use blob_schema::TransitionBlobV1;
-use celestia_adapter::{CelestiaClient, Namespace, SubmitResult};
+use celestia_adapter::{CelestiaClient, Namespace};
 use merkle::{Hash32, MerkleProof};
 use state::{StateOp, StateStore};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
-use transition_format::TransitionInput;
+use transition_format::{TransitionInput, VerifiableOperation};
 use zk_host_harness::{program_hash, TransitionProver};
 
 /// Configuration for the app node.
@@ -150,17 +150,14 @@ impl AppNode {
         ops: Vec<StateOp>,
         public_inputs: Vec<u8>,
         private_inputs: Vec<u8>,
+        verifiable_ops: Vec<VerifiableOperation>,
     ) -> Result<TransitionResult> {
         let mut state = self.state.write().await;
 
         let prev_root = state.store.root();
         let sequence = state.store.transition_index() + 1;
 
-        info!(
-            "Applying transition {}: {} operations",
-            sequence,
-            ops.len()
-        );
+        info!("Applying transition {}: {} operations", sequence, ops.len());
 
         // Apply operations and collect witnesses
         let witnesses = state.store.apply_batch(ops)?;
@@ -174,13 +171,10 @@ impl AppNode {
             hex::encode(new_root)
         );
 
-        // Build transition input
-        let input = TransitionInput::new(
-            prev_root,
-            public_inputs.clone(),
-            private_inputs,
-            witnesses,
-        );
+        // Build transition input with operations for business logic verification
+        let input =
+            TransitionInput::new(prev_root, public_inputs.clone(), private_inputs, witnesses)
+                .with_operations(verifiable_ops);
 
         // Generate proof (or just execute for testing)
         let (proof_bytes, output) = if state.config.proving_enabled {

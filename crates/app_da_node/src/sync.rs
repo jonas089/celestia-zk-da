@@ -4,7 +4,7 @@ use anyhow::Result;
 use blob_schema::TransitionBlobV1;
 use celestia_adapter::{CelestiaClient, Namespace};
 use merkle::Hash32;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use zk_host_harness::{program_hash, TransitionVerifier};
 
 /// Result of syncing from Celestia.
