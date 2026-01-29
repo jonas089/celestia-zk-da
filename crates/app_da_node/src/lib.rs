@@ -8,7 +8,9 @@
 //! - Verifies proofs from Celestia for syncing
 
 pub mod api;
+pub mod client;
 pub mod node;
 pub mod sync;
 
+pub use client::{AppNodeClient, RootInfo, TransitionResult as ClientTransitionResult};
 pub use node::{AppNode, AppNodeConfig};

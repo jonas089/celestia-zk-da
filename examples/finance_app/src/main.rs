@@ -7,12 +7,10 @@
 //! 4. Anyone can verify the full proof chain
 
 use anyhow::Result;
-use app_da_node::{AppNode, AppNodeConfig};
-use celestia_adapter::Namespace;
+use app_da_node::AppNodeClient;
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use state::StateOp;
-use std::path::PathBuf;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 use transition_format::{OperationType, VerifiableOperation};
@@ -38,21 +36,9 @@ impl Account {
 #[command(name = "finance")]
 #[command(about = "Example finance application with ZK-proven transfers")]
 struct Cli {
-    /// Data directory for state storage
-    #[arg(long, default_value = "./finance-data")]
-    data_dir: PathBuf,
-
-    /// Celestia RPC URL
-    #[arg(long, default_value = "http://localhost:26658")]
-    celestia_rpc: String,
-
-    /// Disable Celestia posting
-    #[arg(long)]
-    no_celestia: bool,
-
-    /// Disable proof generation (execute only)
-    #[arg(long)]
-    no_proving: bool,
+    /// API server URL
+    #[arg(long, default_value = "http://127.0.0.1:16000")]
+    api_url: String,
 
     /// Log level
     #[arg(long, default_value = "info")]
@@ -102,9 +88,9 @@ fn account_key(name: &str) -> Vec<u8> {
     format!("account:{}", name).into_bytes()
 }
 
-async fn get_account(node: &AppNode, name: &str) -> Result<Option<Account>> {
+async fn get_account(client: &AppNodeClient, name: &str) -> Result<Option<Account>> {
     let key = account_key(name);
-    match node.get(&key).await? {
+    match client.get(&key).await? {
         Some(data) => Ok(Account::decode(&data)),
         None => Ok(None),
     }
@@ -130,45 +116,41 @@ async fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    // Create config
-    let config = AppNodeConfig {
-        data_dir: cli.data_dir,
-        app_id: b"finance-app".to_vec(),
-        namespace: Namespace::from_string("finance"),
-        celestia_rpc: cli.celestia_rpc,
-        celestia_enabled: !cli.no_celestia,
-        proving_enabled: !cli.no_proving,
-    };
+    // Create HTTP client
+    let client = AppNodeClient::new(cli.api_url);
+
+    // Test connection
+    if !client.health().await.unwrap_or(false) {
+        anyhow::bail!("Failed to connect to API server. Make sure the server is running.");
+    }
 
     match cli.command {
         Commands::CreateAccount { name, balance } => {
-            create_account(config, &name, balance).await?;
+            create_account(client, &name, balance).await?;
         }
         Commands::Transfer { from, to, amount } => {
-            transfer(config, &from, &to, amount).await?;
+            transfer(client, &from, &to, amount).await?;
         }
         Commands::Balance { name } => {
-            show_balance(config, &name).await?;
+            show_balance(client, &name).await?;
         }
         Commands::Accounts => {
-            show_accounts(config).await?;
+            show_accounts(client).await?;
         }
         Commands::Status => {
-            show_status(config).await?;
+            show_status(client).await?;
         }
         Commands::Demo => {
-            run_demo(config).await?;
+            run_demo(client).await?;
         }
     }
 
     Ok(())
 }
 
-async fn create_account(config: AppNodeConfig, name: &str, balance: u64) -> Result<()> {
-    let node = AppNode::new(config).await?;
-
+async fn create_account(client: AppNodeClient, name: &str, balance: u64) -> Result<()> {
     // Check if account already exists
-    if get_account(&node, name).await?.is_some() {
+    if get_account(&client, name).await?.is_some() {
         anyhow::bail!("Account '{}' already exists", name);
     }
 
@@ -196,7 +178,7 @@ async fn create_account(config: AppNodeConfig, name: &str, balance: u64) -> Resu
 
     info!("Creating account '{}' with balance {}", name, balance);
 
-    let result = node
+    let result = client
         .apply_transition(ops, public_inputs, vec![], verifiable_ops)
         .await?;
 
@@ -209,11 +191,9 @@ async fn create_account(config: AppNodeConfig, name: &str, balance: u64) -> Resu
     Ok(())
 }
 
-async fn transfer(config: AppNodeConfig, from: &str, to: &str, amount: u64) -> Result<()> {
-    let node = AppNode::new(config).await?;
-
+async fn transfer(client: AppNodeClient, from: &str, to: &str, amount: u64) -> Result<()> {
     // Get sender account
-    let from_account = get_account(&node, from)
+    let from_account = get_account(&client, from)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Sender account '{}' not found", from))?;
 
@@ -228,7 +208,7 @@ async fn transfer(config: AppNodeConfig, from: &str, to: &str, amount: u64) -> R
     }
 
     // Get or create receiver account
-    let to_account = get_account(&node, to).await?.unwrap_or_default();
+    let to_account = get_account(&client, to).await?.unwrap_or_default();
 
     // Compute new balances
     let from_new = Account {
@@ -271,7 +251,7 @@ async fn transfer(config: AppNodeConfig, from: &str, to: &str, amount: u64) -> R
 
     info!("Transferring {} from '{}' to '{}'", amount, from, to);
 
-    let result = node
+    let result = client
         .apply_transition(ops, public_inputs, vec![], verifiable_ops)
         .await?;
 
@@ -291,12 +271,10 @@ async fn transfer(config: AppNodeConfig, from: &str, to: &str, amount: u64) -> R
     Ok(())
 }
 
-async fn show_balance(config: AppNodeConfig, name: &str) -> Result<()> {
-    let node = AppNode::new(config).await?;
-
+async fn show_balance(client: AppNodeClient, name: &str) -> Result<()> {
     let key = account_key(name);
-    let (value, proof) = node.get_with_proof(&key).await?;
-    let root = node.root().await;
+    let (value, proof) = client.get_with_proof(&key).await?;
+    let root = client.root().await?;
 
     match value {
         Some(data) => {
@@ -318,40 +296,29 @@ async fn show_balance(config: AppNodeConfig, name: &str) -> Result<()> {
     Ok(())
 }
 
-async fn show_accounts(config: AppNodeConfig) -> Result<()> {
-    let node = AppNode::new(config).await?;
-    let state = node.state();
-    let state = state.read().await;
-
+async fn show_accounts(client: AppNodeClient) -> Result<()> {
     println!("=== Accounts ===");
-    println!("Root: {}", hex::encode(state.store.root()));
+    let root_info = client.get_latest_root().await?;
+    println!("Root: {}", hex::encode(root_info.root));
     println!();
 
-    for (key, value) in state.store.scan_prefix(b"account:") {
-        let key_str = String::from_utf8_lossy(&key);
-        let name = key_str.strip_prefix("account:").unwrap_or(&key_str);
-
-        if let Some(account) = Account::decode(&value) {
-            println!(
-                "{}: balance={}, nonce={}",
-                name, account.balance, account.nonce
-            );
-        }
-    }
+    // Note: This is a simplified version. A full implementation would need
+    // an API endpoint to list all accounts or we'd need to track account names separately.
+    println!("To see individual accounts, use the 'balance' command.");
+    println!("Example: cargo run --bin finance balance alice");
 
     Ok(())
 }
 
-async fn show_status(config: AppNodeConfig) -> Result<()> {
-    let node = AppNode::new(config).await?;
-
+async fn show_status(client: AppNodeClient) -> Result<()> {
     println!("=== Finance App Status ===");
-    println!("Root: {}", hex::encode(node.root().await));
-    println!("Transition index: {}", node.transition_index().await);
+    let root_info = client.get_latest_root().await?;
+    println!("Root: {}", hex::encode(root_info.root));
+    println!("Transition index: {}", root_info.transition_index);
     println!();
 
     println!("=== Root History ===");
-    for (seq, root, height) in node.root_history().await {
+    for (seq, root, height) in client.root_history().await? {
         print!("  {}: {}", seq, hex::encode(root));
         if let Some(h) = height {
             print!(" (celestia: {})", h);
@@ -362,10 +329,8 @@ async fn show_status(config: AppNodeConfig) -> Result<()> {
     Ok(())
 }
 
-async fn run_demo(config: AppNodeConfig) -> Result<()> {
+async fn run_demo(client: AppNodeClient) -> Result<()> {
     println!("=== Finance App Demo ===\n");
-
-    let node = AppNode::new(config).await?;
 
     // Create accounts
     println!("--- Creating Accounts ---");
@@ -396,7 +361,7 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
 
         let public_inputs = format!("create:{}:{}", name, balance).into_bytes();
 
-        let result = node
+        let result = client
             .apply_transition(ops, public_inputs, vec![], verifiable_ops)
             .await?;
         println!(
@@ -419,8 +384,8 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
     ];
 
     for (from, to, amount) in &transfers {
-        let from_acc = get_account(&node, from).await?.unwrap();
-        let to_acc = get_account(&node, to).await?.unwrap_or_default();
+        let from_acc = get_account(&client, from).await?.unwrap();
+        let to_acc = get_account(&client, to).await?.unwrap_or_default();
 
         let from_key = account_key(from);
         let to_key = account_key(to);
@@ -459,7 +424,7 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
 
         let public_inputs = format!("transfer:{}:{}:{}", from, to, amount).into_bytes();
 
-        let result = node
+        let result = client
             .apply_transition(ops, public_inputs, vec![], verifiable_ops)
             .await?;
         println!(
@@ -476,9 +441,9 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
     // Show final balances
     println!("--- Final Balances ---");
 
-    let root = node.root().await;
+    let root = client.root().await?;
     for (name, _) in &accounts {
-        let (value, proof) = node.get_with_proof(&account_key(name)).await?;
+        let (value, proof) = client.get_with_proof(&account_key(name)).await?;
         if let Some(data) = value {
             if let Some(acc) = Account::decode(&data) {
                 println!(
@@ -496,7 +461,7 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
 
     // Show history
     println!("--- Transition History ---");
-    for (seq, root, height) in node.root_history().await {
+    for (seq, root, height) in client.root_history().await? {
         print!("Seq {}: {}", seq, hex::encode(&root[..8]));
         if let Some(h) = height {
             print!(" (celestia: {})", h);
@@ -505,7 +470,7 @@ async fn run_demo(config: AppNodeConfig) -> Result<()> {
     }
 
     println!("\n=== Demo Complete ===");
-    println!("Final root: {}", hex::encode(node.root().await));
+    println!("Final root: {}", hex::encode(client.root().await?));
 
     Ok(())
 }

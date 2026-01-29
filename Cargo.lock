@@ -562,6 +562,7 @@ dependencies = [
  "celestia_adapter",
  "hex",
  "merkle",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",

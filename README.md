@@ -167,39 +167,79 @@ GET /celestia/transitions?from_height=...&to_height=... → Fetch range of proof
 # Start local Celestia network
 make start
 
-# Run the finance demo (generates proofs and posts to Celestia)
-cargo run --release --bin finance demo
+# Start the API server (this owns the database and serves state)
+cargo run --release --bin appd -- \
+  --data-dir ./finance-data \
+  --namespace finance \
+  serve --bind 127.0.0.1:16000
+
+# In another terminal, run the finance demo (sends requests to API server)
+cargo run --release --bin finance -- --api-url http://127.0.0.1:16000 demo
 
 # Verify the proof chain
 cargo run --release --bin verifier verify --from 1 --to 100
 ```
 
+### Architecture: Client-Server Model
+
+The system uses a client-server architecture to prevent database locking issues:
+
+- **API Server (`appd`)**: Owns the database exclusively, generates proofs, posts to Celestia
+- **Finance App (`finance`)**: HTTP client that sends operations to the API server
+- **Verifier**: Reads proofs from Celestia for independent verification
+
+This ensures only one process accesses the database, preventing sled's file lock conflicts.
+
 ### Running the API Server
 
-Start the HTTP API server to query state and retrieve proofs:
+The API server must be running before you can use the finance app:
 
 ```bash
-# Start API server for the finance app (uses same data directory)
+# Start API server for the finance app
 cargo run --release --bin appd -- \
   --data-dir ./finance-data \
   --namespace finance \
-  serve --bind 127.0.0.1:3000
+  serve --bind 127.0.0.1:16000
 ```
 
-### Querying State
+### Using the Finance App
+
+With the API server running, you can use the finance CLI:
+
+```bash
+# Create accounts
+cargo run --bin finance -- --api-url http://127.0.0.1:16000 create-account --name alice --balance 1000
+cargo run --bin finance -- --api-url http://127.0.0.1:16000 create-account --name bob --balance 500
+
+# Transfer funds
+cargo run --bin finance -- --api-url http://127.0.0.1:16000 transfer --from alice --to bob --amount 100
+
+# Check balance
+cargo run --bin finance -- --api-url http://127.0.0.1:16000 balance alice
+
+# View status
+cargo run --bin finance -- --api-url http://127.0.0.1:16000 status
+
+# Run full demo
+cargo run --bin finance -- --api-url http://127.0.0.1:16000 demo
+```
+
+### Querying State via HTTP API
+
+You can also query state directly via the HTTP API:
 
 ```bash
 # Health check
-curl http://localhost:3000/health
+curl http://localhost:16000/health
 
 # Get current state root
-curl http://localhost:3000/root/latest
+curl http://localhost:16000/root/latest
 
 # Get account balance with Merkle proof
-curl "http://localhost:3000/value?key=account:alice"
+curl "http://localhost:16000/value?key=account:alice"
 
 # Get transition history (shows Celestia heights)
-curl http://localhost:3000/history
+curl http://localhost:16000/history
 ```
 
 ### Retrieving Proofs from Celestia
@@ -208,10 +248,10 @@ Fetch ZK proofs that were posted to Celestia:
 
 ```bash
 # Get a single transition by Celestia block height
-curl "http://localhost:3000/celestia/transition?height=12345"
+curl "http://localhost:16000/celestia/transition?height=12345"
 
 # Get multiple transitions in a height range
-curl "http://localhost:3000/celestia/transitions?from_height=100&to_height=200"
+curl "http://localhost:16000/celestia/transitions?from_height=100&to_height=200"
 ```
 
 Response includes:
@@ -298,9 +338,3 @@ impl Application for MyComplianceApp {
 - No gas costs for execution complexity
 - Full sovereignty over state machine rules
 - Regulatory-friendly design
-
-## Contact
-
-Ready to build compliant, verifiable financial infrastructure?
-
-Built with Celestia, SP1, and Rust for regulated institutions that need both privacy and transparency.

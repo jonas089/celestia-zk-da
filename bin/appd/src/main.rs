@@ -58,7 +58,7 @@ enum Commands {
     /// Start the HTTP server
     Serve {
         /// Address to bind
-        #[arg(long, default_value = "127.0.0.1:3000")]
+        #[arg(long, default_value = "127.0.0.1:16000")]
         bind: SocketAddr,
     },
     /// Apply a transition from JSON
@@ -208,7 +208,9 @@ async fn apply_transition(
 
     info!("Applying {} operations...", ops.len());
 
-    let result = node.apply_transition(ops, public_inputs, vec![], vec![]).await?;
+    let result = node
+        .apply_transition(ops, public_inputs, vec![], vec![])
+        .await?;
 
     println!("Transition applied:");
     println!("  Sequence: {}", result.sequence);

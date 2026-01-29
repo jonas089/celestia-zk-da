@@ -4,17 +4,19 @@ use crate::node::AppNodeState;
 use axum::{
     extract::{Query, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use blob_schema::TransitionBlobV1;
 use merkle::MerkleProof;
 use serde::{Deserialize, Serialize};
+use state::StateOp;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
+use transition_format::{OperationType, VerifiableOperation};
 
 /// API state type.
 type ApiState = Arc<RwLock<AppNodeState>>;
@@ -35,6 +37,7 @@ pub fn create_router(state: Arc<RwLock<AppNodeState>>) -> Router {
         .route("/history", get(get_history))
         .route("/celestia/transition", get(get_celestia_transition))
         .route("/celestia/transitions", get(get_celestia_transitions))
+        .route("/transition", post(apply_transition))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -135,6 +138,42 @@ impl TransitionResponse {
 #[derive(Serialize)]
 struct TransitionsResponse {
     transitions: Vec<TransitionResponse>,
+}
+
+#[derive(Deserialize)]
+struct ApplyTransitionRequest {
+    operations: Vec<OperationRequest>,
+    public_inputs: Option<String>, // Base64 encoded
+    private_inputs: Option<String>, // Base64 encoded
+    verifiable_operations: Vec<VerifiableOperationRequest>,
+}
+
+#[derive(Deserialize)]
+struct OperationRequest {
+    #[serde(rename = "type")]
+    op_type: String, // "insert" or "delete"
+    key: String,     // UTF-8 or hex based on encoding
+    value: Option<String>, // Base64 encoded
+    #[serde(default)]
+    encoding: Option<String>, // "hex" or "utf8" (default)
+}
+
+#[derive(Deserialize)]
+struct VerifiableOperationRequest {
+    op_type: serde_json::Value,
+    key: String,
+    old_value: Option<String>, // Base64 encoded
+    new_value: Option<String>, // Base64 encoded
+    witness_index: usize,
+}
+
+#[derive(Serialize)]
+struct ApplyTransitionResponse {
+    sequence: u64,
+    prev_root: String,
+    new_root: String,
+    celestia_height: Option<u64>,
+    proof_size_bytes: usize,
 }
 
 // Query parameters
@@ -321,6 +360,234 @@ async fn get_celestia_transitions(
     Ok(Json(TransitionsResponse { transitions }))
 }
 
+async fn apply_transition(
+    State(state): State<ApiState>,
+    Json(request): Json<ApplyTransitionRequest>,
+) -> Result<Json<ApplyTransitionResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut state = state.write().await;
+
+    // Convert operations
+    let mut ops = Vec::new();
+    for op in request.operations {
+        let key = decode_key(&op.key, op.encoding.as_deref())?;
+        let state_op = match op.op_type.as_str() {
+            "delete" => StateOp::Delete { key },
+            "insert" | _ => {
+                let value = if let Some(v) = op.value {
+                    BASE64.decode(&v).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            Json(ErrorResponse {
+                                error: format!("invalid base64 value: {}", e),
+                            }),
+                        )
+                    })?
+                } else {
+                    Vec::new()
+                };
+                StateOp::Insert { key, value }
+            }
+        };
+        ops.push(state_op);
+    }
+
+    // Decode inputs
+    let public_inputs = if let Some(pi) = request.public_inputs {
+        BASE64.decode(&pi).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("invalid base64 public_inputs: {}", e),
+                }),
+            )
+        })?
+    } else {
+        Vec::new()
+    };
+
+    let private_inputs = if let Some(pi) = request.private_inputs {
+        BASE64.decode(&pi).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("invalid base64 private_inputs: {}", e),
+                }),
+            )
+        })?
+    } else {
+        Vec::new()
+    };
+
+    // Convert verifiable operations
+    let mut verifiable_ops = Vec::new();
+    for vop in request.verifiable_operations {
+        let key = decode_key(&vop.key, None)?;
+        let old_value = vop
+            .old_value
+            .map(|v| BASE64.decode(&v))
+            .transpose()
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("invalid base64 old_value: {}", e),
+                    }),
+                )
+            })?;
+        let new_value = vop
+            .new_value
+            .map(|v| BASE64.decode(&v))
+            .transpose()
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("invalid base64 new_value: {}", e),
+                    }),
+                )
+            })?;
+
+        // Parse operation type from JSON
+        let op_type = parse_operation_type(&vop.op_type).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("invalid operation type: {}", e),
+                }),
+            )
+        })?;
+
+        verifiable_ops.push(VerifiableOperation {
+            op_type,
+            key,
+            old_value,
+            new_value,
+            witness_index: vop.witness_index,
+        });
+    }
+
+    // Apply transition using the app node logic
+    let prev_root = state.store.root();
+    let sequence = state.store.transition_index() + 1;
+
+    // Apply operations and collect witnesses
+    let witnesses = state.store.apply_batch(ops).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("failed to apply operations: {}", e),
+            }),
+        )
+    })?;
+
+    // Commit the state changes
+    let new_root = state.store.commit().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("failed to commit state: {}", e),
+            }),
+        )
+    })?;
+
+    // Build transition input with operations for business logic verification
+    let input = transition_format::TransitionInput::new(
+        prev_root,
+        public_inputs.clone(),
+        private_inputs,
+        witnesses,
+    )
+    .with_operations(verifiable_ops);
+
+    // Generate proof (or just execute for testing)
+    let (proof_bytes, output) = if state.config.proving_enabled {
+        let result = state.prover.prove(&input).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("proof generation failed: {}", e),
+                }),
+            )
+        })?;
+        (result.proof_bytes, result.output)
+    } else {
+        let output = state.prover.execute(&input).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("execution failed: {}", e),
+                }),
+            )
+        })?;
+        (Vec::new(), output)
+    };
+
+    // Verify the output matches our computation
+    if output.prev_root != prev_root || output.new_root != new_root {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "proof output mismatch".to_string(),
+            }),
+        ));
+    }
+
+    // Create blob
+    let blob = blob_schema::TransitionBlobV1::new(
+        state.config.app_id.clone(),
+        sequence,
+        prev_root,
+        new_root,
+        public_inputs,
+        proof_bytes.clone(),
+        zk_host_harness::program_hash(),
+    )
+    .with_timestamp(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+    );
+
+    // Post to Celestia if enabled
+    let celestia_result = if state.config.celestia_enabled {
+        let blob_bytes = blob.encode().map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("blob encoding failed: {}", e),
+                }),
+            )
+        })?;
+        match state
+            .celestia
+            .submit_blob(&state.config.namespace, &blob_bytes)
+            .await
+        {
+            Ok(result) => Some(result),
+            Err(e) => {
+                tracing::warn!("Failed to post to Celestia: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Update root history
+    state
+        .root_history
+        .push((new_root, celestia_result.as_ref().map(|r| r.height)));
+
+    Ok(Json(ApplyTransitionResponse {
+        sequence,
+        prev_root: hex::encode(prev_root),
+        new_root: hex::encode(new_root),
+        celestia_height: celestia_result.as_ref().map(|r| r.height),
+        proof_size_bytes: proof_bytes.len(),
+    }))
+}
+
 // Helper functions
 
 fn decode_key(
@@ -337,5 +604,57 @@ fn decode_key(
             )
         }),
         _ => Ok(key.as_bytes().to_vec()),
+    }
+}
+
+fn parse_operation_type(value: &serde_json::Value) -> Result<OperationType, String> {
+    // Handle simple string variant
+    if let Some(s) = value.as_str() {
+        if s == "Set" {
+            return Ok(OperationType::Set);
+        }
+    }
+
+    // Handle object variants
+    let obj = value.as_object().ok_or("operation type must be an object or string")?;
+
+    if let Some(create_account) = obj.get("CreateAccount") {
+        let initial_balance = create_account
+            .get("initial_balance")
+            .and_then(|v| v.as_u64())
+            .ok_or("CreateAccount must have initial_balance")?;
+        Ok(OperationType::CreateAccount { initial_balance })
+    } else if let Some(transfer) = obj.get("Transfer") {
+        let from = transfer
+            .get("from")
+            .and_then(|v| v.as_str())
+            .ok_or("Transfer must have from")?
+            .as_bytes()
+            .to_vec();
+        let to = transfer
+            .get("to")
+            .and_then(|v| v.as_str())
+            .ok_or("Transfer must have to")?
+            .as_bytes()
+            .to_vec();
+        let amount = transfer
+            .get("amount")
+            .and_then(|v| v.as_u64())
+            .ok_or("Transfer must have amount")?;
+        Ok(OperationType::Transfer { from, to, amount })
+    } else if let Some(mint) = obj.get("Mint") {
+        let amount = mint
+            .get("amount")
+            .and_then(|v| v.as_u64())
+            .ok_or("Mint must have amount")?;
+        Ok(OperationType::Mint { amount })
+    } else if let Some(burn) = obj.get("Burn") {
+        let amount = burn
+            .get("amount")
+            .and_then(|v| v.as_u64())
+            .ok_or("Burn must have amount")?;
+        Ok(OperationType::Burn { amount })
+    } else {
+        Err("unknown operation type".to_string())
     }
 }
