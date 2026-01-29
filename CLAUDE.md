@@ -1,4 +1,4 @@
-# Celestia 3.0 — Data Availability for ZKVM Proofs (SP1)  
+# Celestia: Data Availability for ZKVM Proofs (SP1)  
 ## Implementation Plan (Single-File, Publishable)
 
 ## 0) Summary
