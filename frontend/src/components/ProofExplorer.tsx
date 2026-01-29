@@ -8,6 +8,7 @@ function ProofExplorer() {
   const [transition, setTransition] = useState<TransitionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingTransition, setLoadingTransition] = useState(false);
+  const [transitionError, setTransitionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedProof, setExpandedProof] = useState(false);
 
@@ -30,19 +31,48 @@ function ProofExplorer() {
   const selectEntry = async (entry: HistoryEntry) => {
     setSelectedEntry(entry);
     setTransition(null);
+    setTransitionError(null);
     setExpandedProof(false);
 
     if (entry.celestia_height !== null) {
-      setLoadingTransition(true);
-      try {
-        const result = await api.getCelestiaTransition(entry.celestia_height);
-        setTransition(result);
-      } catch (e) {
-        // Transition might not be available
-        console.error('Failed to fetch transition:', e);
-      } finally {
-        setLoadingTransition(false);
+      await fetchTransitionWithRetry(entry.celestia_height);
+    }
+  };
+
+  const fetchTransitionWithRetry = async (height: number, attempt: number = 0): Promise<void> => {
+    const maxAttempts = 5;
+    const baseDelay = 1000; // 1 second
+
+    setLoadingTransition(true);
+    setTransitionError(null);
+
+    try {
+      const result = await api.getCelestiaTransition(height);
+      setTransition(result);
+      setTransitionError(null);
+    } catch (e) {
+      console.error(`Failed to fetch transition (attempt ${attempt + 1}/${maxAttempts}):`, e);
+
+      if (attempt < maxAttempts - 1) {
+        // Exponential backoff: 1s, 2s, 4s, 8s
+        const delay = baseDelay * Math.pow(2, attempt);
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchTransitionWithRetry(height, attempt + 1);
+      } else {
+        // All retries exhausted
+        setTransitionError(
+          'Transition data not yet available on Celestia. The proof may still be propagating. Please try again in a moment.'
+        );
       }
+    } finally {
+      setLoadingTransition(false);
+    }
+  };
+
+  const retryFetchTransition = () => {
+    if (selectedEntry?.celestia_height !== null && selectedEntry?.celestia_height !== undefined) {
+      fetchTransitionWithRetry(selectedEntry.celestia_height);
     }
   };
 
@@ -121,15 +151,19 @@ function ProofExplorer() {
               <div className="detail-section">
                 <h3>State Roots</h3>
                 <div className="root-comparison">
-                  <div className="root-item">
-                    <span className="label">Previous Root:</span>
-                    <code className="root">
-                      {transition?.prev_root || '(fetch from Celestia to view)'}
-                    </code>
-                  </div>
-                  <div className="arrow-down">↓</div>
+                  {selectedEntry.sequence > 0 && (
+                    <>
+                      <div className="root-item">
+                        <span className="label">Previous Root:</span>
+                        <code className="root">
+                          {transition?.prev_root || '(fetch from Celestia to view)'}
+                        </code>
+                      </div>
+                      <div className="arrow-down">↓</div>
+                    </>
+                  )}
                   <div className="root-item new">
-                    <span className="label">New Root:</span>
+                    <span className="label">{selectedEntry.sequence === 0 ? 'Genesis Root:' : 'New Root:'}</span>
                     <code className="root">{selectedEntry.root}</code>
                   </div>
                 </div>
@@ -145,6 +179,14 @@ function ProofExplorer() {
                     </div>
                     {loadingTransition && (
                       <div className="loading-inline">Loading transition data...</div>
+                    )}
+                    {transitionError && (
+                      <div className="error-inline">
+                        <p>{transitionError}</p>
+                        <button className="retry-btn" onClick={retryFetchTransition}>
+                          Retry
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -218,11 +260,24 @@ function ProofExplorer() {
 
               {selectedEntry.celestia_height === null && (
                 <div className="detail-section local-only">
-                  <h3>Local Only</h3>
-                  <p>
-                    This transition has not been posted to Celestia DA yet.
-                    The proof exists only on the local node.
-                  </p>
+                  {selectedEntry.sequence === 0 ? (
+                    <>
+                      <h3>Genesis State</h3>
+                      <p>
+                        This is the initial state root before any transactions were applied.
+                        There is no proof because no state transition occurred - this is simply
+                        the starting point of the Merkle tree (empty state).
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h3>Local Only</h3>
+                      <p>
+                        This transition has not been posted to Celestia DA yet.
+                        The proof exists only on the local node.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
             </div>

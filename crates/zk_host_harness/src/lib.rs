@@ -99,9 +99,10 @@ impl TransitionProver {
         info!("Setting up prover...");
         let (pk, _vk) = client.setup(TRANSITION_ELF);
 
-        info!("Generating proof...");
+        info!("Generating compressed proof...");
         let proof = client
             .prove(&pk, &stdin)
+            .compressed()
             .run()
             .map_err(|e| ProverError::ProofGeneration(e.to_string()))?;
 

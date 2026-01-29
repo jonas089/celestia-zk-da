@@ -222,14 +222,13 @@ impl CelestiaClient {
 
         info!("Blob submitted at height {}", height);
 
-        // Fetch the blob back to get the commitment
-        let blobs = self.get_blobs(namespace, height).await?;
-        let commitment = blobs
-            .first()
-            .map(|b| b.commitment.clone())
-            .unwrap_or_default();
-
-        Ok(SubmitResult { height, commitment })
+        // Note: We don't fetch the blob back immediately because there's a delay
+        // between submission and availability. The commitment can be retrieved
+        // later if needed via get_blobs().
+        Ok(SubmitResult {
+            height,
+            commitment: vec![],
+        })
     }
 
     /// Get all blobs for a namespace at a specific height.

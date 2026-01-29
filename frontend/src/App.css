@@ -929,3 +929,30 @@ input::placeholder {
   font-size: 0.9rem;
   margin: 0;
 }
+
+/* Error inline (for transition data loading errors) */
+.error-inline {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.error-inline p {
+  color: var(--error);
+  font-size: 0.9rem;
+  margin: 0 0 12px 0;
+}
+
+.error-inline .retry-btn {
+  background: var(--error);
+  color: white;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  width: auto;
+}
+
+.error-inline .retry-btn:hover:not(:disabled) {
+  background: #dc2626;
+}
