@@ -333,6 +333,21 @@ impl Application for MyComplianceApp {
 - Celestia provides economic security through staking
 - Merkle proofs are cryptographically binding
 
+#### Quantum Resistance: Future-Proof Security
+
+**This project is quantum-resistant. Most blockchain systems are not.**
+
+SP1 uses **STARK** (Scalable Transparent ARgument of Knowledge) cryptography, which relies on hash functions and information-theoretic security. Hash-based cryptography is believed to be secure against quantum computer attacks.
+
+In contrast, **Groth16** and similar SNARK proof systems (used by most blockchain ZK applications) depend on **elliptic curve pairings** and the discrete logarithm problem. These cryptographic primitives are **vulnerable to Shor's algorithm** running on sufficiently powerful quantum computers.
+
+**What this means:**
+- **This system**: Proofs remain secure even if quantum computers become practical
+- **Groth16-based systems**: Will require migration to quantum-resistant cryptography
+- **Most blockchains**: Current signature schemes (ECDSA, EdDSA) are quantum-vulnerable
+
+For financial institutions planning 10-20 year infrastructure lifecycles, quantum resistance is not just a theoretical concern—it's a practical requirement. This architecture is designed to remain secure through the quantum transition.
+
 ### Performance
 - Proof generation: Parallelizable across machines
 - Celestia publication: Sub-second finality
